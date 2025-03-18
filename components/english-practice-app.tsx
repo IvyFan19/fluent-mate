@@ -1,6 +1,7 @@
 "use client"
 
 import type React from "react"
+import type { Message } from "ai"
 
 import { useState, useRef, useEffect } from "react"
 import { useChat } from "ai/react"
@@ -10,44 +11,24 @@ import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card"
 import { Mic, MicOff, Send } from "lucide-react"
 import ChatMessage from "@/components/chat-message"
 
-// Add TypeScript declarations for the Web Speech API
+// Simplified type declaration for SpeechRecognition
 declare global {
   interface Window {
-    SpeechRecognition: SpeechRecognitionStatic | undefined
-    webkitSpeechRecognition: SpeechRecognitionStatic | undefined
-  }
-
-  interface SpeechRecognition extends EventTarget {
-    continuous: boolean
-    interimResults: boolean
-    lang: string
-    onresult: ((this: SpeechRecognition, ev: SpeechRecognitionEvent) => any) | null
-    onend: ((this: SpeechRecognition, ev: Event) => any) | null
-    start: () => void
-    stop: () => void
-  }
-
-  interface SpeechRecognitionStatic {
-    prototype: SpeechRecognition
-    new (): SpeechRecognition
-    new (): SpeechRecognition
-  }
-
-  interface SpeechRecognitionEvent extends Event {
-    results: SpeechRecognitionResultList
-  }
-
-  interface SpeechRecognitionResultList extends Array<SpeechRecognitionResult> {}
-
-  interface SpeechRecognitionResult extends Array<SpeechRecognitionAlternative> {
-    isFinal: boolean
-  }
-
-  interface SpeechRecognitionAlternative {
-    transcript: string
-    confidence: number
+    SpeechRecognition: any;
+    webkitSpeechRecognition: any;
   }
 }
+
+// GrammarFeedback interface
+interface GrammarFeedback {
+  sentence: string;
+  errorWord: string;
+  correctionWord: string;
+  messageId: string;
+}
+
+// Using UIMessage to distinguish from the Message interface from 'ai'
+type UIMessage = Message;
 
 export default function EnglishPracticeApp() {
   const { messages, input, handleInputChange, handleSubmit, isLoading } = useChat({
@@ -63,14 +44,16 @@ export default function EnglishPracticeApp() {
 
   const [isListening, setIsListening] = useState(false)
   const [speechSupported, setSpeechSupported] = useState(false)
-  const recognitionRef = useRef<SpeechRecognition | null>(null)
+  const [grammarFeedback, setGrammarFeedback] = useState<GrammarFeedback | null>(null)
+  const [loadingFeedback, setLoadingFeedback] = useState(false)
+  const recognitionRef = useRef<any>(null)
   const chatContainerRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (chatContainerRef.current) {
       chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight
     }
-  }, [messages, isLoading])
+  }, [messages, isLoading, grammarFeedback])
 
   useEffect(() => {
     // Check if SpeechRecognition is supported
@@ -103,10 +86,10 @@ export default function EnglishPracticeApp() {
     recognitionRef.current.interimResults = true
     recognitionRef.current.lang = "en-US"
 
-    recognitionRef.current.onresult = (event) => {
+    recognitionRef.current.onresult = (event: any) => {
       const transcript = Array.from(event.results)
-        .map((result) => result[0])
-        .map((result) => result.transcript)
+        .map((result: any) => result[0])
+        .map((result: any) => result.transcript)
         .join("")
 
       handleInputChange({ target: { value: transcript } } as React.ChangeEvent<HTMLInputElement>)
@@ -135,12 +118,48 @@ export default function EnglishPracticeApp() {
     handleSubmit(e)
   }
 
+  // Function to request grammar feedback
+  const requestGrammarFeedback = async (messageId: string, text: string) => {
+    setLoadingFeedback(true)
+    
+    try {
+      const response = await fetch("/api/grammar", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ text }),
+      })
+      
+      if (!response.ok) throw new Error("Failed to get grammar feedback")
+      
+      // Get JSON response
+      const data = await response.json()
+      setGrammarFeedback({
+        ...data,
+        messageId
+      })
+    } catch (error) {
+      console.error("Error getting grammar feedback:", error)
+      setGrammarFeedback(null)
+    } finally {
+      setLoadingFeedback(false)
+    }
+  }
+
   return (
     <Card className="w-full">
       <CardHeader></CardHeader>
       <CardContent ref={chatContainerRef} className="h-[60vh] overflow-y-auto space-y-4 p-4">
         {messages.map((message) => (
-          <ChatMessage key={message.id} message={message} />
+          <ChatMessage 
+            key={message.id} 
+            message={message} 
+            requestFeedback={requestGrammarFeedback}
+            isLoadingFeedback={loadingFeedback && grammarFeedback?.messageId === message.id}
+            feedback={grammarFeedback?.messageId === message.id ? grammarFeedback : null}
+            showFeedback={grammarFeedback?.messageId === message.id}
+          />
         ))}
         {isLoading && (
           <div className="flex items-center space-x-2">
