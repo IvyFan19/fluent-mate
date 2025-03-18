@@ -20,10 +20,16 @@ declare global {
 }
 
 // GrammarFeedback interface
-interface GrammarFeedback {
-  sentence: string;
+interface ErrorItem {
   errorWord: string;
   correctionWord: string;
+  position: number;
+  explanation?: string;
+}
+
+interface GrammarFeedback {
+  sentence: string;
+  errors: ErrorItem[];
   messageId: string;
 }
 
